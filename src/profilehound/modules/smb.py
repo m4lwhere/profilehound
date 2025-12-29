@@ -263,10 +263,10 @@ def get_owner_sid_for_path(
         FILE_BASIC_INFORMATION = 4
 
         # Set creation options based on target type
-        # if is_directory:
-        #     creation_options = FILE_DIRECTORY_FILE
-        # else:
-        #     creation_options = FILE_NON_DIRECTORY_FILE
+        if is_directory:
+            creation_options = FILE_DIRECTORY_FILE
+        else:
+            creation_options = FILE_NON_DIRECTORY_FILE
 
         fid = smb3.create(
             tid,
@@ -275,7 +275,7 @@ def get_owner_sid_for_path(
             shareMode=FILE_SHARE_READ
             | FILE_SHARE_WRITE
             | FILE_SHARE_DELETE,  # Does this need share_delete?
-            creationOptions=FILE_NON_DIRECTORY_FILE,
+            creationOptions=creation_options,
             creationDisposition=FILE_OPEN,
             fileAttributes=0,
         )
@@ -379,6 +379,7 @@ def enumerate_user_profiles(
     lmhash: str = "",
     nthash: str = "",
     target_ip: Optional[str] = None,
+    timeout: int = 3,
     include_local: bool = False,
 ) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, str]]:
     """
@@ -401,7 +402,7 @@ def enumerate_user_profiles(
 
     # Connect to SMB
     logger.debug(f"Connecting to {target} ({remote_host})...")
-    smb = SMBConnection(remoteName=target, remoteHost=remote_host, sess_port=445)
+    smb = SMBConnection(remoteName=target, remoteHost=remote_host, timeout=timeout, sess_port=445)
 
     # Authenticate
     try:
@@ -535,11 +536,46 @@ def enumerate_user_profiles(
                 logger.warning(f"Could not retrieve owner SID for {name}")
                 continue
 
-            # Skip well-known local/service SIDs
+            # Attempt fallback enumeration of DPAPI Protect Folder if well-known local/service SIDs on NTUSER.DAT
             if owner_sid.startswith(SKIP_SID_PREFIXES):
-                logger.debug(f"Skipping well-known SID {name} ({owner_sid})")
-                skipped[name] = f"well-known SID ({owner_sid})"
-                continue
+                logger.debug(f"Determined {name}'s NTUSER.DAT has well-known SID as owner ({owner_sid})")
+                logger.debug(f"Attempting fallback enumeration of DPAPI Protect Folder for {name}")
+                try:
+                    dpapi_entries = smb.listPath(
+                        share, rf"\Users\{name}\AppData\Roaming\Microsoft\Protect\*"
+                    )
+                    for dpapi_entry in dpapi_entries:
+                        # if dpapi_entry.get_longname() == "." or dpapi_entry.get_longname() == "..":
+                        if not dpapi_entry.get_longname().startswith("S-1-5-21"):
+                            continue
+                        logger.debug(f"DPAPI directory: {dpapi_entry.get_longname()}")
+                        owner_sid = dpapi_entry.get_longname()
+                        created = filetime_to_datetime(dpapi_entry.get_ctime())
+                        modified = filetime_to_datetime(dpapi_entry.get_wtime())
+
+                        if owner_sid.startswith(SKIP_SID_PREFIXES):
+                            logger.debug(f"Determined {name}'s DPAPI directory has well-known SID as owner ({owner_sid})")
+                            logger.debug(f"Skipping enumeration of {name}")
+                            skipped[name] = f"well-known SID ({owner_sid})"
+                            continue
+
+                except SessionError as e:
+                    short_msg = e.getErrorString()[0]
+                    if short_msg == "STATUS_ACCESS_DENIED":
+                        logger.debug(
+                            rf"Received STATUS_ACCESS_DENIED for {share} on {target} as {domain}\{username}"
+                            if domain
+                            else rf"Received STATUS_ACCESS_DENIED for {share} on {target} as {username}"
+                        )
+                        # return owners, skipped, errors, machine
+                        raise UserWarning(
+                            rf"User {domain}\{username} does not have permission to access {share} on {target}"
+                            if domain
+                            else rf"User {username} does not have permission to access {share} on {target}"
+                        )
+                    else:
+                        logger.error(f"Error: {short_msg}")
+                        raise RuntimeError(rf"Failed to list {share}\Users: {e}") from e
 
             # Must be an account SID (S-1-5-21-...)
             if not owner_sid.startswith("S-1-5-21-"):

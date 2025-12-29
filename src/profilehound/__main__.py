@@ -107,6 +107,9 @@ def get_args():
         help="file path to a list of targets, one per line. Omitting uses LDAP to gather all machines.",
     )
     smb_args.add_argument(
+        "--smb-timeout", type=int, default=3, help="SMB connection timeout in seconds (default: 3)"
+    )
+    smb_args.add_argument(
         "--smb-workers", type=int, default=8, help="SMB worker threads"
     )
     smb_args.add_argument(
@@ -304,6 +307,7 @@ def main() -> int:
                 domain=args.auth_domain,
                 lmhash=args.auth_hashes,
                 nthash=args.auth_hashes,
+                timeout=args.smb_timeout,
                 target_ip=ip,
             )
         except OSError as e:
@@ -329,6 +333,9 @@ def main() -> int:
             return 1
         except RuntimeError as e:
             logger.error(f"Failed to get profile enumeration for {target[1]}: {e}")
+            continue
+        except Exception as e:
+            logger.error(f"Something really went wrong with {target[1]}, attempting to continue: {e}")
             continue
 
         if len(owners) == 0:
