@@ -1,0 +1,1 @@
+{"query":"match p = (u:User)-[e:HasUserProfile]-(c:Computer)\nwhere e.profileCreated \u003c e.profileModified\nreturn p","name":"Profilehound - Active User Profile","description":"Modified date is after created date, indicating this is likely an active profile"}

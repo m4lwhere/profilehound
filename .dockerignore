@@ -1,0 +1,13 @@
+.venv
+.git
+__pycache__
+*.pyc
+.python-version
+.ruff_cache
+dist
+images
+*.json
+BloodHound_Queries
+tests
+Dockerfile
+.dockerignore

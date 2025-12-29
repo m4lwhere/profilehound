@@ -1,0 +1,1 @@
+{"query":"MATCH p=(u:User)-[:HasUserProfile]-\u003e(c:Computer)\nRETURN p","name":"Profilehound - All User Profiles","description":"Checks for all user profiles found with Profilehound"}

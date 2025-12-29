@@ -1,0 +1,1 @@
+{"query":"MATCH p=(g:Group)\u003c-[:MemberOf*1..]-(u:User)-[:HasUserProfile]-\u003e(c:Computer)\nWHERE toLower(g.samaccountname) = \"administrators\"\nRETURN p","name":"Profilehound - Find user profiles by group name","description":"Finds all profiles on machines for users within a specific group"}

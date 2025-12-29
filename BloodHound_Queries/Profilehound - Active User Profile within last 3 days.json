@@ -1,0 +1,1 @@
+{"query":"WITH 3 as active_days\nMATCH p = (u:User)-[e:HasUserProfile]-(c:Computer)\nWHERE e.profileModified \u003e (datetime().epochseconds - (active_days * 86400))\nRETURN p","name":"Profilehound - Active User Profile within last 3 days","description":"Checks for all user profiles with a modified time within the last 3 days"}
