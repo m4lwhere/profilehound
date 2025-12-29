@@ -5,6 +5,9 @@ import argparse
 import dns.resolver
 from textwrap import dedent
 from impacket.smbconnection import SessionError
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.logging import RichHandler
+from rich.console import Console
 
 from sharehound.targets import load_targets
 from sharehound.core.Config import Config as SharehoundConfig
@@ -226,12 +229,9 @@ def main() -> int:
         logger.setLevel(logging.INFO)
     else:
         logger.setLevel(logging.WARNING)
-    handler = logging.StreamHandler()
-    handler.setFormatter(
-        logging.Formatter(
-            "[%(asctime)s] [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
-        )
-    )
+    console = Console(stderr=True)
+    handler = RichHandler(console=console, rich_tracebacks=True, show_path=False, show_time=True, show_level=True, markup=True)
+    handler.setFormatter(logging.Formatter("%(message)s"))
     if not logger.handlers:
         logger.addHandler(handler)
 
@@ -278,74 +278,85 @@ def main() -> int:
     # Each directory in there needs to be checked for a domain user profile
     logger.debug(f"Targeting {len(targets)} hosts")
     logger.debug(f"Skipping profiles {SKIP_PROFILE_NAMES}")
-    for target in targets:
-        if args.smb_local_auth:
-            logger.debug(
-                f"Using local machine authentication for user {args.auth_user}"
-            )
-            args.auth_domain = target[1]
-        if target[0] == "fqdn":
-            try:
-                logger.debug(f"Attempting DNS resolution for {target[1]}")
-                ip = resolver.resolve(target[1], "A")[0].address
-                logger.debug(f"Resolved {target[1]} to {ip}")
-            except dns.resolver.NXDOMAIN:
-                logger.info(
-                    f"Target {target[1]} does not exist, received NXDOMAIN from DNS server {resolver.nameservers}"
+    with Progress(
+        SpinnerColumn("bouncingBall", style="magenta"),
+        TextColumn("[bold cyan]{task.description}", justify="right"),
+        BarColumn(bar_width=None, style="black", complete_style="magenta", finished_style="green"),
+        TaskProgressColumn(),
+        TimeRemainingColumn(),
+        transient=True,
+        console=console,
+    ) as progress:
+        task_id = progress.add_task("[bold magenta]Hunting Profiles...", total=len(targets))
+        for target in targets:
+            progress.update(task_id, advance=1)
+            if args.smb_local_auth:
+                logger.debug(
+                    f"Using local machine authentication for user {args.auth_user}"
                 )
+                args.auth_domain = target[1]
+            if target[0] == "fqdn":
+                try:
+                    logger.debug(f"Attempting DNS resolution for {target[1]}")
+                    ip = resolver.resolve(target[1], "A")[0].address
+                    logger.debug(f"Resolved {target[1]} to {ip}")
+                except dns.resolver.NXDOMAIN:
+                    logger.info(
+                        f"Target {target[1]} does not exist, received NXDOMAIN from DNS server {resolver.nameservers}"
+                    )
+                    continue
+                except Exception as e:
+                    logger.error(f"Failed to resolve target {target[1]}: {e}")
+                    continue
+            elif "ip" in target[0]:
+                ip = target[1]
+            try:
+                owners, skipped, errors, machine = enumerate_user_profiles(
+                    target=target[1],
+                    username=args.auth_user,
+                    password=args.auth_password,
+                    domain=args.auth_domain,
+                    lmhash=args.auth_hashes,
+                    nthash=args.auth_hashes,
+                    timeout=args.smb_timeout,
+                    target_ip=ip,
+                )
+            except OSError as e:
+                logger.debug(f"Failed to connect to {target[1]} ({ip}): {e}")
+                continue
+            except UserWarning as e:
+                logger.warning(f"{e}")
+                logger.warning(f"Continuing attempts for all remaining targets")
+                continue
+            except SessionError as e:
+                logger.info(
+                    rf"Failed to authenticate to {target[1]} with domain auth as {args.auth_domain}\{args.auth_user}"
+                )
+                logger.error(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                )
+                logger.error(
+                    "!!!!! Stopping for all targets to prevent domain account lockout !!!!!"
+                )
+                logger.error(
+                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                )
+                return 1
+            except RuntimeError as e:
+                logger.error(f"Failed to get profile enumeration for {target[1]}: {e}")
                 continue
             except Exception as e:
-                logger.error(f"Failed to resolve target {target[1]}: {e}")
+                logger.error(f"Something really went wrong with {target[1]}, attempting to continue: {e}")
                 continue
-        elif "ip" in target[0]:
-            ip = target[1]
-        try:
-            owners, skipped, errors, machine = enumerate_user_profiles(
-                target=target[1],
-                username=args.auth_user,
-                password=args.auth_password,
-                domain=args.auth_domain,
-                lmhash=args.auth_hashes,
-                nthash=args.auth_hashes,
-                timeout=args.smb_timeout,
-                target_ip=ip,
-            )
-        except OSError as e:
-            logger.debug(f"Failed to connect to {target[1]} ({ip}): {e}")
-            continue
-        except UserWarning as e:
-            logger.warning(f"{e}")
-            logger.warning(f"Continuing attempts for all remaining targets")
-            continue
-        except SessionError as e:
-            logger.info(
-                rf"Failed to authenticate to {target[1]} with domain auth as {args.auth_domain}\{args.auth_user}"
-            )
-            logger.error(
-                "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-            )
-            logger.error(
-                "!!!!! Stopping for all targets to prevent domain account lockout !!!!!"
-            )
-            logger.error(
-                "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-            )
-            return 1
-        except RuntimeError as e:
-            logger.error(f"Failed to get profile enumeration for {target[1]}: {e}")
-            continue
-        except Exception as e:
-            logger.error(f"Something really went wrong with {target[1]}, attempting to continue: {e}")
-            continue
 
-        if len(owners) == 0:
-            logger.info(f"No domain profiles found for {target[1]}")
-            continue
-        found_profiles_by_target[target[1]] = {
-            "owners": owners,
-            "machine_sid": machine["sid"],
-        }
-        logger.info(f"Found {len(owners)} domain profile(s) for {target[1]}")
+            if len(owners) == 0:
+                logger.info(f"No domain profiles found for {target[1]}")
+                continue
+            found_profiles_by_target[target[1]] = {
+                "owners": owners,
+                "machine_sid": machine["sid"],
+            }
+            logger.info(f"Found {len(owners)} domain profile(s) for {target[1]}")
     logger.info(f"Found {len(found_profiles_by_target)} targets with profiles")
 
     if len(found_profiles_by_target) == 0:
