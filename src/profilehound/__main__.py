@@ -84,6 +84,9 @@ def get_args():
         help="Query LDAP for all AD subnets and use them as targets",
     )
     global_args.add_argument(
+        "--no-stats", default=False, action="store_true", help="Do not print statistics at the end"
+    )
+    global_args.add_argument(
         "-q", "--quiet", default=False, action="store_true", help="Do not show banner"
     )
     global_args.add_argument(
@@ -372,7 +375,129 @@ def main() -> int:
     # Now we have a dict of targets with their profiles, time to create the OpenGraph
     graph = create_opengraph(found_profiles_by_target)
     graph.export_to_file(args.output)
-    logger.info(f"Exported OpenGraph intel to {args.output}")
+    logger.info(f"Exported ProfileHound OpenGraph intel to {args.output}")
+
+    if not args.no_stats:
+        print_statistics(found_profiles_by_target, console)
+
+
+def print_statistics(found_profiles_by_target, console):
+    from rich.table import Table
+    from rich.panel import Panel
+    from datetime import datetime
+
+    table = Table(title="ProfileHound Statistics", show_header=False, box=None)
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="magenta")
+
+    total_targets = len(found_profiles_by_target)
+    
+    unique_users = set()
+    total_profiles = 0
+    machine_counts = []
+    
+    user_counts = {}
+    profile_dates = []
+
+    for target, details in found_profiles_by_target.items():
+        owners = details['owners']
+        count = len(owners)
+        total_profiles += count
+        machine_counts.append((target, count))
+        
+        for user, user_details in owners.items():
+            unique_users.add(user)
+            user_counts[user] = user_counts.get(user, 0) + 1
+            
+            created = user_details.get('created', 0)
+            modified = user_details.get('modified', 0)
+            if created:
+                profile_dates.append({
+                    'user': user,
+                    'target': target,
+                    'created': created,
+                    'modified': modified,
+                    'duration': modified - created if modified and created else 0
+                })
+
+    avg_profiles = total_profiles / total_targets if total_targets > 0 else 0
+    
+    table.add_row("Total Targets with Profiles", str(total_targets))
+    table.add_row("Total Unique Profiles (Users)", str(len(unique_users)))
+    table.add_row("Average Profiles per Target", f"{avg_profiles:.2f}")
+    
+    console.print(Panel(table, title="General Summary"))
+
+    # Top connected users
+    sorted_users = sorted(user_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+    user_table = Table(title="Users with most profiles")
+    user_table.add_column("User", style="green")
+    user_table.add_column("Machine Count", style="yellow")
+    for user, count in sorted_users:
+        user_table.add_row(user, str(count))
+    console.print(user_table)
+
+    # Top populated machines
+    sorted_machines = sorted(machine_counts, key=lambda x: x[1], reverse=True)[:5]
+    machine_table = Table(title="Top Populated Machines")
+    machine_table.add_column("Machine", style="blue")
+    machine_table.add_column("Profile Count", style="yellow")
+    for machine, count in sorted_machines:
+        machine_table.add_row(machine, str(count))
+    console.print(machine_table)
+    
+    # Oldest Profiles
+    sorted_by_date = sorted(profile_dates, key=lambda x: x['created'])[:5]
+    oldest_table = Table(title="Oldest User Profiles")
+    oldest_table.add_column("User", style="green")
+    oldest_table.add_column("Machine", style="blue")
+    oldest_table.add_column("Created", style="cyan")
+    for p in sorted_by_date:
+        created_str = datetime.fromtimestamp(p['created']).strftime('%Y-%m-%d')
+        oldest_table.add_row(p['user'], p['target'], created_str)
+    console.print(oldest_table)
+
+    # Longest Duration
+    sorted_by_duration = sorted(profile_dates, key=lambda x: x['duration'], reverse=True)[:5]
+    duration_table = Table(title="Longest Lived Profiles (Created -> Modified)")
+    duration_table.add_column("User", style="green")
+    duration_table.add_column("Machine", style="blue")
+    duration_table.add_column("Duration (Days)", style="magenta")
+    for p in sorted_by_duration:
+        days = p['duration'] / 86400
+        duration_table.add_row(p['user'], p['target'], f"{days:.1f}")
+    console.print(duration_table)
+
+    # Top 5 Focus Machines
+    machine_scores = []
+    for target, details in found_profiles_by_target.items():
+        score = 0
+        owners = details['owners']
+        profile_count = len(owners)
+        
+        # Base score is profile count
+        score += profile_count * 1.0
+        
+        # Bonus for having "connector" users (users present on many machines)
+        connector_bonus = 0
+        for user in owners:
+            if user_counts[user] > 1:
+                connector_bonus += user_counts[user] # Add the number of machines this user is on
+        
+        score += connector_bonus * 0.5
+        machine_scores.append((target, score, profile_count))
+
+    sorted_focus = sorted(machine_scores, key=lambda x: x[1], reverse=True)[:5]
+    
+    focus_table = Table(title="Top 5 Machines to Focus On (Hubs)")
+    focus_table.add_column("Machine", style="red bold")
+    focus_table.add_column("Score", style="yellow")
+    focus_table.add_column("Reason", style="white")
+    
+    for machine, score, count in sorted_focus:
+        focus_table.add_row(machine, f"{score:.1f}", f"Has {count} profiles, potential lateral movement hub")
+
+    console.print(focus_table)
 
 
 if __name__ == "__main__":

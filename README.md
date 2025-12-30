@@ -16,7 +16,7 @@ Huge thank you to Remi Gascou ([@podalirius](https://github.com/p0dalirius)) for
 > ProfileHound is in early stages of development and does not have all collection modes implemented yet. Use with caution in production environments, you assume the risk of using this tool.
 
 ## Why?
-Post-exploitation objectives in Active Directory have shifted from data stored on-site into SaaS applications and the cloud. To prove value in offsec, we need to demonstrate how access to these services can be compromised. In many cases, these services are used only by certain groups or users, such as HR, Finance, etc. In some scenarios, certain SaaS applications can only be accesssed from specific machines.
+Post-exploitation objectives in Active Directory have shifted from data stored on-site into SaaS applications and the cloud. To prove value in offsec, we need to demonstrate how access to these services can be compromised. In many cases, these services are used only by certain groups or users, such as HR, Finance, etc. In some scenarios, certain SaaS applications can only be accessed from specific machines.
 
 BloodHound's `HasSession` edge is great, but it's only useful when a user is logged into a machine. If a user is not logged into a machine when the data is collected, it's much more difficult to find which computer may contain secrets to facilitate further exploitation. User profiles may contain a significant amount of valuable intel within DPAPI, cached credentials, SSH keys, cloud keys, and more - these don't require an active user session to access.
 

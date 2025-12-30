@@ -65,6 +65,7 @@ logger = logging.getLogger("profilehound")
 def get_machine_domain_sid(smb: SMBConnection, target: str) -> Optional[str]:
     """
     Query the machine's domain object SID via LSA RPC (\\pipe\\lsarpc).
+    If the machine's domain object SID is the same as the local machine SID, it might be a DC.
 
     This returns the SID prefix for domain accounts.
     """
@@ -104,7 +105,7 @@ def get_machine_domain_sid(smb: SMBConnection, target: str) -> Optional[str]:
             domain_sid = (
                 info["Sid"].formatCanonical() if info["Sid"] is not None else None
             )
-            logger.debug(f"Machine's Domain SID: {domain_sid}")
+            # logger.debug(f"Machine's Domain SID: {domain_sid}")
         except Exception:
             info = lsad.hLsarQueryInformationPolicy2(
                 dce,
@@ -456,6 +457,12 @@ def enumerate_user_profiles(
             logger.warning(
                 "Could not determine machine SID - local account filtering may be incomplete"
             )
+        if machine_domain_sid.startswith(machine_local_sid):
+            logger.debug(
+                f"Machine domain SID and local SID are the same - target {target} might be a domain controller"
+            )
+            include_local = True
+            logger.debug(f"Setting include_local to True to collect accounts which match the machine SID")
 
     # List C:\Users directory
     share = "C$"
@@ -496,6 +503,9 @@ def enumerate_user_profiles(
                 if domain
                 else rf"User {username} does not have permission to access {share} on {target}"
             )
+        elif short_msg == "STATUS_OBJECT_NAME_NOT_FOUND":
+            logger.debug(rf"Failed to list {share}\Users: {e}")
+            raise UserWarning(rf"Failed to list {share}\Users: {e}")
         else:
             logger.error(f"Error: {short_msg}")
             raise RuntimeError(rf"Failed to list {share}\Users: {e}") from e
@@ -564,6 +574,10 @@ def enumerate_user_profiles(
                             if domain
                             else rf"User {username} does not have permission to access {share} on {target}"
                         )
+                    elif short_msg == "STATUS_OBJECT_NAME_NOT_FOUND":
+                        logger.debug(rf"DPAPI directory not found for {name}, skipping...")
+                        skipped[name] = "DPAPI directory not found"
+                        continue
                     else:
                         logger.error(f"Error: {short_msg}")
                         raise RuntimeError(rf"Failed to list {share}\Users: {e}") from e
