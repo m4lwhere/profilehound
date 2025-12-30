@@ -1,6 +1,6 @@
 [project]
 name = "profilehound"
-version = "0.1.0"
+version = "0.1.1"
 description = "ProfileHound - BloodHound OpenGraph collector for user profiles stored on domain machines. Make informed decisions about looting secrets by identifying active user profiles on domain machines."
 readme = "README.md"
 authors = [

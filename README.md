@@ -54,44 +54,101 @@ docker run --rm -v ${PWD}:/profilehound profilehound --auth-user alice --auth-pa
 
 For example, to run using a Domain Admin account `sccm.lab\alice` with password `whiteRabbit`:
 ```
-profilehound --auth-user alice --auth-password whiteRabbit --auth-domain sccm.lab --dns 192.168.57.10 --auth-dc-ip 192.168.57.10
+$ profilehound --auth-user alice --auth-password whiteRabbit --auth-domain sccm.lab --target 192.168.57.0/27
     ____             _____ __     __  __                      __
    / __ \_________  / __(_) /__  / / / /___  __  ______  ____/ /
   / /_/ / ___/ __ \/ /_/ / / _ \/ /_/ / __ \/ / / / __ \/ __  /
  / ____/ /  / /_/ / __/ / /  __/ __  / /_/ / /_/ / / / / /_/ /
-/_/   /_/   \____/_/ /_/_/\___/_/ /_/\____/\__,_/_/ /_/\__,_/    v0.1.0
+/_/   /_/   \____/_/ /_/_/\___/_/ /_/\____/\__,_/_/ /_/\__,_/    v0.1.1
 @m4lwhere
 
 BloodHound CE OpenGraph collector for user profiles stored on domain machines.
 
-[2025-12-29 16:59:58] [INFO] Loaded 4 targets
-[2025-12-29 16:59:58] [INFO] Successful authentication on CLIENT.sccm.lab (192.168.57.13) as sccm.lab\alice
-[2025-12-29 16:59:59] [INFO] Successfully connected to share \\CLIENT.sccm.lab\C$ as sccm.lab\alice
-[2025-12-29 16:59:59] [INFO] Enumerating profiles in \\CLIENT.sccm.lab\C$\Users\...
-[2025-12-29 16:59:59] [INFO]     alice: S-1-5-21-3016982856-3796307652-1246469985-1112  created:2025-12-26      modified:2025-12-28
-[2025-12-29 16:59:59] [INFO]     sccm-account-da:       S-1-5-21-3016982856-3796307652-1246469985-1119  created:2025-12-26      modified:2025-11-07
-[2025-12-29 16:59:59] [INFO] Found 2 domain profile(s) for CLIENT.sccm.lab
-[2025-12-29 16:59:59] [INFO] Successful authentication on DC.sccm.lab (192.168.57.10) as sccm.lab\alice
-[2025-12-29 16:59:59] [INFO] Successfully connected to share \\DC.sccm.lab\C$ as sccm.lab\alice
-[2025-12-29 16:59:59] [INFO] Enumerating profiles in \\DC.sccm.lab\C$\Users\...
-[2025-12-29 16:59:59] [INFO] No domain profiles found for DC.sccm.lab
-[2025-12-29 16:59:59] [INFO] Successful authentication on MECM.sccm.lab (192.168.57.11) as sccm.lab\alice
-[2025-12-29 16:59:59] [INFO] Successfully connected to share \\MECM.sccm.lab\C$ as sccm.lab\alice
-[2025-12-29 16:59:59] [INFO] Enumerating profiles in \\MECM.sccm.lab\C$\Users\...
-[2025-12-29 16:59:59] [INFO]     alice: S-1-5-21-3016982856-3796307652-1246469985-1112  created:2025-12-28      modified:2025-11-07
-[2025-12-29 16:59:59] [INFO]     eve:   S-1-5-21-3016982856-3796307652-1246469985-1116  created:2025-12-27      modified:2025-11-07
-[2025-12-29 16:59:59] [INFO] Found 2 domain profile(s) for MECM.sccm.lab
-[2025-12-29 16:59:59] [INFO] Successful authentication on MSSQL.sccm.lab (192.168.57.12) as sccm.lab\alice
-[2025-12-29 16:59:59] [INFO] Successfully connected to share \\MSSQL.sccm.lab\C$ as sccm.lab\alice
-[2025-12-29 16:59:59] [INFO] Enumerating profiles in \\MSSQL.sccm.lab\C$\Users\...
-[2025-12-29 16:59:59] [INFO]     alice: S-1-5-21-3016982856-3796307652-1246469985-1112  created:2025-12-28      modified:2025-12-28
-[2025-12-29 16:59:59] [INFO]     franck:        S-1-5-21-3016982856-3796307652-1246469985-1117  created:2025-12-27      modified:2025-11-07
-[2025-12-29 16:59:59] [INFO] Found 2 domain profile(s) for MSSQL.sccm.lab
-[2025-12-29 16:59:59] [INFO] Found 3 targets with profiles
-[2025-12-29 16:59:59] [INFO] Exported OpenGraph intel to profilehound_20251229-165958.json
+[12/30/25 11:58:05] INFO     Loaded 32 targets
+[12/30/25 11:58:08] INFO     Successful authentication on 192.168.57.10 (192.168.57.10) as sccm.lab\alice
+                    INFO     Successfully connected to share \\192.168.57.10\C$ as sccm.lab\alice
+                    INFO     Enumerating profiles in \\192.168.57.10\C$\Users\...
+                    INFO         vagrant:    S-1-5-21-3016982856-3796307652-1246469985-1000  created:2025-11-07      modified:2025-11-07
+                    INFO     Found 1 domain profile(s) for 192.168.57.10
+                    INFO     Successful authentication on 192.168.57.11 (192.168.57.11) as sccm.lab\alice
+[12/30/25 11:58:09] INFO     Successfully connected to share \\192.168.57.11\C$ as sccm.lab\alice
+                    INFO     Enumerating profiles in \\192.168.57.11\C$\Users\...
+                    INFO         administrator:      S-1-5-21-3016982856-3796307652-1246469985-500   created:2025-11-07      modified:2025-11-07
+                    INFO         alice:      S-1-5-21-3016982856-3796307652-1246469985-1112  created:2025-12-28      modified:2025-11-07
+                    INFO         eve:        S-1-5-21-3016982856-3796307652-1246469985-1116  created:2025-12-27      modified:2025-11-07
+                    INFO     Found 3 domain profile(s) for 192.168.57.11
+                    INFO     Successful authentication on 192.168.57.12 (192.168.57.12) as sccm.lab\alice
+                    INFO     Successfully connected to share \\192.168.57.12\C$ as sccm.lab\alice
+                    INFO     Enumerating profiles in \\192.168.57.12\C$\Users\...
+                    INFO         alice:      S-1-5-21-3016982856-3796307652-1246469985-1112  created:2025-12-28      modified:2025-12-28
+                    INFO         franck:     S-1-5-21-3016982856-3796307652-1246469985-1117  created:2025-12-27      modified:2025-11-07
+                    INFO         sccm-sql:   S-1-5-21-3016982856-3796307652-1246469985-1121  created:2025-11-07      modified:2025-11-07
+                    INFO     Found 3 domain profile(s) for 192.168.57.12
+                    INFO     Successful authentication on 192.168.57.13 (192.168.57.13) as sccm.lab\alice
+                    INFO     Successfully connected to share \\192.168.57.13\C$ as sccm.lab\alice
+                    INFO     Enumerating profiles in \\192.168.57.13\C$\Users\...
+                    INFO         alice:      S-1-5-21-3016982856-3796307652-1246469985-1112  created:2025-12-26      modified:2025-12-28
+                    INFO         sccm-account-da:    S-1-5-21-3016982856-3796307652-1246469985-1119  created:2025-12-26      modified:2025-11-07
+                    INFO     Found 2 domain profile(s) for 192.168.57.13
+[12/30/25 11:59:27] INFO     Found 4 machines with profiles
+                    INFO     Exported OpenGraph intel to profilehound_20251230-115805.json
+╭────────────────────────────────────────────────────────────────── General Summary ───────────────────────────────────────────────────────────────────╮
+│        ProfileHound Statistics                                                                                                                       │
+│  Total Targets with Profiles    4                                                                                                                    │
+│  Total Unique Profiles (Users)  7                                                                                                                    │
+│  Average Profiles per Target    2.25                                                                                                                 │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+       Top Connected Users
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ User          ┃ Machine Count ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ alice         │ 3             │
+│ vagrant       │ 1             │
+│ administrator │ 1             │
+│ eve           │ 1             │
+│ franck        │ 1             │
+└───────────────┴───────────────┘
+     Top Populated Machines
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Machine       ┃ Profile Count ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ 192.168.57.11 │ 3             │
+│ 192.168.57.12 │ 3             │
+│ 192.168.57.13 │ 2             │
+│ 192.168.57.10 │ 1             │
+└───────────────┴───────────────┘
+              Oldest User Profiles
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┓
+┃ User            ┃ Machine       ┃ Created    ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━┩
+│ vagrant         │ 192.168.57.10 │ 2025-11-07 │
+│ sccm-sql        │ 192.168.57.12 │ 2025-11-07 │
+│ administrator   │ 192.168.57.11 │ 2025-11-07 │
+│ sccm-account-da │ 192.168.57.13 │ 2025-12-26 │
+│ alice           │ 192.168.57.13 │ 2025-12-26 │
+└─────────────────┴───────────────┴────────────┘
+   Longest Lived Profiles (Created -> Modified)
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ User          ┃ Machine       ┃ Duration (Days) ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ alice         │ 192.168.57.13 │ 1.8             │
+│ alice         │ 192.168.57.12 │ 0.0             │
+│ sccm-sql      │ 192.168.57.12 │ 0.0             │
+│ administrator │ 192.168.57.11 │ 0.0             │
+│ vagrant       │ 192.168.57.10 │ 0.0             │
+└───────────────┴───────────────┴─────────────────┘
+                    Top 5 Machines to Focus On (Hubs)
+┏━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Machine       ┃ Score ┃ Reason                                         ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ 192.168.57.11 │ 4.5   │ Has 3 profiles, potential lateral movement hub │
+│ 192.168.57.12 │ 4.5   │ Has 3 profiles, potential lateral movement hub │
+│ 192.168.57.13 │ 3.5   │ Has 2 profiles, potential lateral movement hub │
+│ 192.168.57.10 │ 1.0   │ Has 1 profiles, potential lateral movement hub │
+└───────────────┴───────┴────────────────────────────────────────────────┘
 ```
 
-This created a file called `profilehound_20251229-165958.json` in the current directory. This file can be imported directly into BHCE by dragging and dropping the file into the BloodHound UI. It will automatically be parsed and correlate nodes via SID. The new edge `HasUserProfile` will be created to show the relationship between the user and the profile.
+This created a file called `profilehound_20251230-115805.json` in the current directory. This file can be imported directly into BHCE by dragging and dropping the file into the BloodHound UI. It will automatically be parsed and correlate nodes via SID. The new edge `HasUserProfile` will be created to show the relationship between the user and the profile.
 
 # How it Works
 ProfileHound uses the `C$` share to enumerate user profiles on a domain machine at `\\<target>\C$\Users\`. It will read the user's `NTUSER.DAT` file to determine if the user is a domain account or local account by retrieving the SID from the file metadata. For example, it will gather all user directories at `\\<target>\C$\Users\` and then loop over each directory to find the `NTUSER.DAT` file at `\\<target>\C$\Users\<username>\NTUSER.DAT`. If the `NTUSER.DAT` file is owned by a well-known SID, it will try to find the user's SID by reading their DPAPI directory (e.g. `\\<target>\C$\Users\<username>\AppData\Roaming\Microsoft\Protect\<SID>`).
