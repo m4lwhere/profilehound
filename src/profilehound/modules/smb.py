@@ -65,6 +65,7 @@ logger = logging.getLogger("profilehound")
 def get_machine_domain_sid(smb: SMBConnection, target: str) -> Optional[str]:
     """
     Query the machine's domain object SID via LSA RPC (\\pipe\\lsarpc).
+    If the machine's domain object SID is the same as the local machine SID, it might be a DC.
 
     This returns the SID prefix for domain accounts.
     """
@@ -104,7 +105,7 @@ def get_machine_domain_sid(smb: SMBConnection, target: str) -> Optional[str]:
             domain_sid = (
                 info["Sid"].formatCanonical() if info["Sid"] is not None else None
             )
-            logger.debug(f"Machine's Domain SID: {domain_sid}")
+            # logger.debug(f"Machine's Domain SID: {domain_sid}")
         except Exception:
             info = lsad.hLsarQueryInformationPolicy2(
                 dce,
@@ -393,7 +394,9 @@ def enumerate_user_profiles(
 
     # Connect to SMB
     logger.debug(f"Connecting to {target} ({remote_host})...")
-    smb = SMBConnection(remoteName=target, remoteHost=remote_host, timeout=timeout, sess_port=445)
+    smb = SMBConnection(
+        remoteName=target, remoteHost=remote_host, timeout=timeout, sess_port=445
+    )
 
     # Authenticate
     try:
@@ -456,6 +459,14 @@ def enumerate_user_profiles(
             logger.warning(
                 "Could not determine machine SID - local account filtering may be incomplete"
             )
+        if machine_domain_sid.startswith(machine_local_sid):
+            logger.debug(
+                f"Machine domain SID and local SID are the same - target {target} might be a domain controller"
+            )
+            include_local = True
+            logger.debug(
+                f"Setting include_local to True to collect accounts which match the machine SID"
+            )
 
     # List C:\Users directory
     share = "C$"
@@ -496,6 +507,9 @@ def enumerate_user_profiles(
                 if domain
                 else rf"User {username} does not have permission to access {share} on {target}"
             )
+        elif short_msg == "STATUS_OBJECT_NAME_NOT_FOUND":
+            logger.debug(rf"Failed to list {share}\Users: {e}")
+            raise UserWarning(rf"Failed to list {share}\Users: {e}")
         else:
             logger.error(f"Error: {short_msg}")
             raise RuntimeError(rf"Failed to list {share}\Users: {e}") from e
@@ -529,8 +543,12 @@ def enumerate_user_profiles(
 
             # Attempt fallback enumeration of DPAPI Protect Folder if well-known local/service SIDs on NTUSER.DAT
             if owner_sid.startswith(SKIP_SID_PREFIXES):
-                logger.debug(f"Determined {name}'s NTUSER.DAT has well-known SID as owner ({owner_sid})")
-                logger.debug(f"Attempting fallback enumeration of DPAPI Protect Folder for {name}")
+                logger.debug(
+                    f"Determined {name}'s NTUSER.DAT has well-known SID as owner ({owner_sid})"
+                )
+                logger.debug(
+                    f"Attempting fallback enumeration of DPAPI Protect Folder for {name}"
+                )
                 try:
                     dpapi_entries = smb.listPath(
                         share, rf"\Users\{name}\AppData\Roaming\Microsoft\Protect\*"
@@ -545,7 +563,9 @@ def enumerate_user_profiles(
                         modified = filetime_to_datetime(dpapi_entry.get_wtime())
 
                         if owner_sid.startswith(SKIP_SID_PREFIXES):
-                            logger.debug(f"Determined {name}'s DPAPI directory has well-known SID as owner ({owner_sid})")
+                            logger.debug(
+                                f"Determined {name}'s DPAPI directory has well-known SID as owner ({owner_sid})"
+                            )
                             logger.debug(f"Skipping enumeration of {name}")
                             skipped[name] = f"well-known SID ({owner_sid})"
                             continue
@@ -564,6 +584,12 @@ def enumerate_user_profiles(
                             if domain
                             else rf"User {username} does not have permission to access {share} on {target}"
                         )
+                    elif short_msg == "STATUS_OBJECT_NAME_NOT_FOUND":
+                        logger.debug(
+                            rf"DPAPI directory not found for {name}, skipping..."
+                        )
+                        skipped[name] = "DPAPI directory not found"
+                        continue
                     else:
                         logger.error(f"Error: {short_msg}")
                         raise RuntimeError(rf"Failed to list {share}\Users: {e}") from e
@@ -612,4 +638,3 @@ def enumerate_user_profiles(
         pass
 
     return owners, skipped, errors, machine
-
