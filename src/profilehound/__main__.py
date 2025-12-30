@@ -483,9 +483,11 @@ def print_statistics(found_profiles_by_target, console):
     oldest_table.add_column("User", style="green")
     oldest_table.add_column("Machine", style="blue")
     oldest_table.add_column("Created", style="cyan")
+    oldest_table.add_column("Last Modified", style="yellow")
     for p in sorted_by_date:
         created_str = datetime.fromtimestamp(p["created"]).strftime("%Y-%m-%d")
-        oldest_table.add_row(p["user"], p["target"], created_str)
+        modified_str = datetime.fromtimestamp(p["modified"]).strftime("%Y-%m-%d")
+        oldest_table.add_row(p["user"], p["target"], created_str, modified_str)
     console.print(oldest_table)
 
     # Longest Duration
@@ -495,10 +497,18 @@ def print_statistics(found_profiles_by_target, console):
     duration_table = Table(title="Longest Lived Profiles (Created -> Modified)")
     duration_table.add_column("User", style="green")
     duration_table.add_column("Machine", style="blue")
-    duration_table.add_column("Duration (Days)", style="magenta")
+    duration_table.add_column("Age (Days)", style="magenta")
+    duration_table.add_column("Created", style="cyan")
+    duration_table.add_column("Last Modified", style="yellow")
     for p in sorted_by_duration:
         days = p["duration"] / 86400
-        duration_table.add_row(p["user"], p["target"], f"{days:.1f}")
+        duration_table.add_row(
+            p["user"],
+            p["target"],
+            f"{days:.1f}",
+            datetime.fromtimestamp(p["created"]).strftime("%Y-%m-%d"),
+            datetime.fromtimestamp(p["modified"]).strftime("%Y-%m-%d"),
+        )
     console.print(duration_table)
 
     # Top 5 Focus Machines
