@@ -357,7 +357,7 @@ def main() -> int:
                 "machine_sid": machine["sid"],
             }
             logger.info(f"Found {len(owners)} domain profile(s) for {target[1]}")
-    logger.info(f"Found {len(found_profiles_by_target)} targets with profiles")
+    logger.info(f"Found {len(found_profiles_by_target)} machines with profiles")
 
     if len(found_profiles_by_target) == 0:
         logger.warning(

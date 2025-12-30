@@ -298,15 +298,6 @@ def get_owner_sid_for_path(
             flags=0,
         )
 
-        # resp = smb3.queryInfo(
-        #     tid,
-        #     fid,
-        #     infoType=SMB2_0_INFO_SECURITY,
-        #     fileInfoClass=SMB2_SEC_INFO_00,
-        #     additionalInformation=OWNER_SECURITY_INFORMATION,
-        #     flags=0,
-        # )
-
         owner_sid = parse_owner_sid(sd_resp)
         created, modified = None, None
         if len(file_resp) >= 32:
@@ -622,66 +613,3 @@ def enumerate_user_profiles(
 
     return owners, skipped, errors, machine
 
-
-# def resolve_sids_to_names(
-#     smb: SMBConnection,
-#     target: str,
-#     sids: list[str],
-# ) -> Dict[str, str]:
-#     """
-#     Resolve a list of SIDs to account names via LSA LookupSids.
-
-#     Returns: {sid: "DOMAIN\\username"}
-#     """
-#     resolved = {}
-
-#     try:
-#         rpctransport = transport.SMBTransport(
-#             smb.getRemoteHost(),
-#             445,
-#             r"\lsarpc",
-#             smb_connection=smb,
-#         )
-
-#         dce = rpctransport.get_dce_rpc()
-#         dce.connect()
-#         dce.bind(lsat.MSRPC_UUID_LSAT)
-
-#         resp = lsad.hLsarOpenPolicy2(
-#             dce,
-#             LSAPR_SERVER_NAME=target + "\x00",
-#             DesiredAccess=lsat.POLICY_LOOKUP_NAMES,
-#         )
-#         policy_handle = resp["PolicyHandle"]
-
-#         # LookupSids accepts multiple SIDs at once
-#         resp = lsat.hLsarLookupSids(
-#             dce,
-#             policy_handle,
-#             sids,
-#             lsat.LSAP_LOOKUP_LEVEL.LsapLookupWksta,
-#         )
-
-#         # Parse results
-#         domains = resp["ReferencedDomains"]["Domains"]
-#         names = resp["TranslatedNames"]["Names"]
-
-#         for i, sid in enumerate(sids):
-#             if i < len(names):
-#                 name_info = names[i]
-#                 name = name_info["Name"]
-#                 domain_idx = name_info["DomainIndex"]
-
-#                 if domain_idx >= 0 and domain_idx < len(domains):
-#                     domain_name = domains[domain_idx]["Name"]
-#                     resolved[sid] = f"{domain_name}\\{name}"
-#                 else:
-#                     resolved[sid] = str(name)
-
-#         lsad.hLsarClose(dce, policy_handle)
-#         dce.disconnect()
-
-#     except Exception as e:
-#         logger.error(f"SID resolution failed: {e}")
-
-#     return resolved
