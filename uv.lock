@@ -411,6 +411,7 @@ dependencies = [
     { name = "bhopengraph" },
     { name = "dnspython" },
     { name = "impacket" },
+    { name = "rich" },
     { name = "sharehound" },
 ]
 
@@ -419,6 +420,7 @@ requires-dist = [
     { name = "bhopengraph" },
     { name = "dnspython" },
     { name = "impacket" },
+    { name = "rich" },
     { name = "sharehound", specifier = ">=1.0.2" },
 ]
 
