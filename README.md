@@ -18,11 +18,18 @@ Huge thank you to Remi Gascou ([@podalirius](https://github.com/p0dalirius)) for
 ## Why?
 Post-exploitation objectives in Active Directory have shifted from data stored on-site into SaaS applications and the cloud. To prove value in offsec, we need to demonstrate how access to these services can be compromised. In many cases, these services are used only by certain groups or users, such as HR, Finance, etc. In some scenarios, certain SaaS applications can only be accessed from specific machines.
 
-BloodHound's `HasSession` edge is great, but it's only useful when a user is logged into a machine. If a user is not logged into a machine when the data is collected, it's much more difficult to find which computer may contain secrets to facilitate further exploitation. User profiles may contain a significant amount of valuable intel within DPAPI, cached credentials, SSH keys, cloud keys, and more - these don't require an active user session to access.
+BloodHound's `HasSession` edge is great, but it's only useful when a user is logged into a machine. If a user is not logged into a machine when the data is collected, it can be difficult to find which computer may contain secrets to facilitate further exploitation. User profiles may contain a significant amount of valuable intel within DPAPI, cached credentials, SSH keys, cloud keys, and more - these don't require an active user session to access.
 
 ![HasUserProfile Edge Example](/images/1.png)
 
 ProfileHound uses BloodHound's [OpenGraph format](https://bloodhound.specterops.io/opengraph/overview) to build a new graph edge called `HasUserProfile` which determines if a user profile exists on a domain machine. This can help operators focus on machines where a high-value user or group has a profile.
+
+The `HasUserProfile` edge contains properties for the profile’s creation date and last modified date. That information helps to determine:
+- If a profile is actively used (logged in within last few days)
+- If the profile has been used for years (likely to contain lots of secrets!)
+
+![HasUserProfile Edge Properties Example](/images/2.png)
+
 
 This edge also has properties for the profile creation and modification timestamps, allowing specific Cypher queries to find active or long-term user profiles on specific machines.
 
@@ -92,12 +99,17 @@ BloodHound CE OpenGraph collector for user profiles stored on domain machines.
                     INFO     Found 2 domain profile(s) for 192.168.57.13
 [12/30/25 11:59:27] INFO     Found 4 machines with profiles
                     INFO     Exported OpenGraph intel to profilehound_20251230-115805.json
-╭────────────────────────────────────────────────────────────────── General Summary ───────────────────────────────────────────────────────────────────╮
-│        ProfileHound Statistics                                                                                                                       │
-│  Total Targets with Profiles    4                                                                                                                    │
-│  Total Unique Profiles (Users)  7                                                                                                                    │
-│  Average Profiles per Target    2.25                                                                                                                 │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+```
+This created a file called `profilehound_20251230-115805.json` in the current directory. This file can be imported directly into BHCE by dragging and dropping the file into the BloodHound UI. It will automatically be parsed and correlate nodes via SID. The new edge `HasUserProfile` will be created to show the relationship between the user and the profile.
+
+ProfileHound will additionally print a small summary of statistics to the console once completed:
+```
+╭───────────────────────── General Summary ──────────────────────────────╮
+│        ProfileHound Statistics                                         │
+│  Total Targets with Profiles    4                                      │
+│  Total Unique Profiles (Users)  7                                      │
+│  Average Profiles per Target    2.25                                   │
+╰────────────────────────────────────────────────────────────────────────╯
        Top Connected Users
 ┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
 ┃ User          ┃ Machine Count ┃
@@ -117,38 +129,37 @@ BloodHound CE OpenGraph collector for user profiles stored on domain machines.
 │ 192.168.57.13 │ 2             │
 │ 192.168.57.10 │ 1             │
 └───────────────┴───────────────┘
-              Oldest User Profiles
-┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┓
-┃ User            ┃ Machine       ┃ Created    ┃
-┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━┩
-│ vagrant         │ 192.168.57.10 │ 2025-11-07 │
-│ sccm-sql        │ 192.168.57.12 │ 2025-11-07 │
-│ administrator   │ 192.168.57.11 │ 2025-11-07 │
-│ sccm-account-da │ 192.168.57.13 │ 2025-12-26 │
-│ alice           │ 192.168.57.13 │ 2025-12-26 │
-└─────────────────┴───────────────┴────────────┘
-   Longest Lived Profiles (Created -> Modified)
-┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
-┃ User          ┃ Machine       ┃ Duration (Days) ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
-│ alice         │ 192.168.57.13 │ 1.8             │
-│ alice         │ 192.168.57.12 │ 0.0             │
-│ sccm-sql      │ 192.168.57.12 │ 0.0             │
-│ administrator │ 192.168.57.11 │ 0.0             │
-│ vagrant       │ 192.168.57.10 │ 0.0             │
-└───────────────┴───────────────┴─────────────────┘
-                    Top 5 Machines to Focus On (Hubs)
-┏━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ Machine       ┃ Score ┃ Reason                                         ┃
-┡━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ 192.168.57.11 │ 4.5   │ Has 3 profiles, potential lateral movement hub │
-│ 192.168.57.12 │ 4.5   │ Has 3 profiles, potential lateral movement hub │
-│ 192.168.57.13 │ 3.5   │ Has 2 profiles, potential lateral movement hub │
-│ 192.168.57.10 │ 1.0   │ Has 1 profiles, potential lateral movement hub │
-└───────────────┴───────┴────────────────────────────────────────────────┘
+                       Oldest User Profiles
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ User            ┃ Machine         ┃ Created    ┃ Last Modified ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ vagrant         │ DC.sccm.lab     │ 2025-11-07 │ 2025-11-07    │
+│ sccm-sql        │ MSSQL.sccm.lab  │ 2025-11-07 │ 2025-11-07    │
+│ administrator   │ MECM.sccm.lab   │ 2025-11-07 │ 2025-11-07    │
+│ sccm-account-da │ CLIENT.sccm.lab │ 2025-12-26 │ 2025-11-07    │
+│ alice           │ CLIENT.sccm.lab │ 2025-12-26 │ 2025-12-28    │
+└─────────────────┴─────────────────┴────────────┴───────────────┘
+                Longest Lived Profiles (Created -> Modified)
+┏━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ User          ┃ Machine         ┃ Age (Days) ┃ Created    ┃ Last Modified ┃
+┡━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ alice         │ CLIENT.sccm.lab │ 1.8        │ 2025-12-26 │ 2025-12-28    │
+│ alice         │ MSSQL.sccm.lab  │ 0.0        │ 2025-12-28 │ 2025-12-28    │
+│ sccm-sql      │ MSSQL.sccm.lab  │ 0.0        │ 2025-11-07 │ 2025-11-07    │
+│ administrator │ MECM.sccm.lab   │ 0.0        │ 2025-11-07 │ 2025-11-07    │
+│ vagrant       │ DC.sccm.lab     │ 0.0        │ 2025-11-07 │ 2025-11-07    │
+└───────────────┴─────────────────┴────────────┴────────────┴───────────────┘
+                     Top 5 Machines to Focus On (Hubs)
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ Machine         ┃ Score ┃ Reason                                         ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ MECM.sccm.lab   │ 4.5   │ Has 3 profiles, potential lateral movement hub │
+│ MSSQL.sccm.lab  │ 4.5   │ Has 3 profiles, potential lateral movement hub │
+│ CLIENT.sccm.lab │ 3.5   │ Has 2 profiles, potential lateral movement hub │
+│ DC.sccm.lab     │ 1.0   │ Has 1 profiles, potential lateral movement hub │
+└─────────────────┴───────┴────────────────────────────────────────────────┘
 ```
 
-This created a file called `profilehound_20251230-115805.json` in the current directory. This file can be imported directly into BHCE by dragging and dropping the file into the BloodHound UI. It will automatically be parsed and correlate nodes via SID. The new edge `HasUserProfile` will be created to show the relationship between the user and the profile.
 
 # How it Works
 ProfileHound uses the `C$` share to enumerate user profiles on a domain machine at `\\<target>\C$\Users\`. It will read the user's `NTUSER.DAT` file to determine if the user is a domain account or local account by retrieving the SID from the file metadata. For example, it will gather all user directories at `\\<target>\C$\Users\` and then loop over each directory to find the `NTUSER.DAT` file at `\\<target>\C$\Users\<username>\NTUSER.DAT`. If the `NTUSER.DAT` file is owned by a well-known SID, it will try to find the user's SID by reading their DPAPI directory (e.g. `\\<target>\C$\Users\<username>\AppData\Roaming\Microsoft\Protect\<SID>`).
