@@ -164,7 +164,9 @@ ProfileHound will additionally print a small summary of statistics to the consol
 # How it Works
 ProfileHound uses the `C$` share to enumerate user profiles on a domain machine at `\\<target>\C$\Users\`. It will read the user's `NTUSER.DAT` file to determine if the user is a domain account or local account by retrieving the SID from the file metadata. For example, it will gather all user directories at `\\<target>\C$\Users\` and then loop over each directory to find the `NTUSER.DAT` file at `\\<target>\C$\Users\<username>\NTUSER.DAT`. If the `NTUSER.DAT` file is owned by a well-known SID, it will try to find the user's SID by reading their DPAPI directory (e.g. `\\<target>\C$\Users\<username>\AppData\Roaming\Microsoft\Protect\<SID>`).
 
-Because we are reaching the `C$` share, we need an administrative account to authenticate to the target machine. ProfileHound will use the credentials provided to authenticate to the target machine. If you are using a domain account, you can use the `--auth-domain` option to specify the domain. If you are using a local account, you can use the `--auth-local` option. 
+Because we are reaching the `C$` share, we need an administrative account to authenticate to the target machine. ProfileHound will use the credentials provided to authenticate to the target machine. If you are using a domain account, you can use the `--auth-domain` option to specify the domain. If you are using a local account, you can use the `--smb-local-auth` option.
+
+By default, ProfileHound stops after an SMB domain authentication failure to reduce account lockout risk. If some endpoints are expected to reject domain authentication and you want to continue scanning the remaining targets, use `--smb-ignore-failed-domain-auth`.
 
 The creation and last modified times of the `NTUSER.DAT` file are gathered and can be used to determine if the profile is active. This correlation is handled within cypher queries on the edge properties, examples are below.
 

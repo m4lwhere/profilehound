@@ -148,6 +148,16 @@ def get_args():
         action="store_true",
         help="Use local account authentication for SMB",
     )
+    smb_args.add_argument(
+        "--smb-ignore-failed-domain-auth",
+        default=False,
+        required=False,
+        action="store_true",
+        help=(
+            "Continue scanning remaining targets after SMB domain authentication "
+            "failures instead of stopping to prevent account lockout"
+        ),
+    )
 
     ldap_args = parser.add_argument_group("LDAP Options")
     ldap_args.add_argument(
@@ -362,6 +372,14 @@ def main() -> int:
                 logger.info(
                     rf"Failed to authenticate to {target[1]} with domain auth as {args.auth_domain}\{args.auth_user}"
                 )
+                logger.debug(f"{e}")
+                if args.smb_ignore_failed_domain_auth:
+                    logger.warning(
+                        "Ignoring SMB domain authentication failure because "
+                        "--smb-ignore-failed-domain-auth was set"
+                    )
+                    logger.warning("Continuing attempts for all remaining targets")
+                    continue
                 logger.error(
                     "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
                 )
