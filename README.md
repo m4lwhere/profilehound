@@ -168,6 +168,8 @@ Because we are reaching the `C$` share, we need an administrative account to aut
 
 By default, ProfileHound stops after an SMB domain authentication failure to reduce account lockout risk. If some endpoints are expected to reject domain authentication and you want to continue scanning the remaining targets, use `--smb-ignore-failed-domain-auth`.
 
+If ProfileHound stops during SMB data collection after profiles have already been found, it will attempt to export the partial OpenGraph results before exiting.
+
 The creation and last modified times of the `NTUSER.DAT` file are gathered and can be used to determine if the profile is active. This correlation is handled within cypher queries on the edge properties, examples are below.
 
 It's interesting to note that if the `NTUSER.DAT` file is last modified before the creation date, it is likely that the profile was created but not used in a tangible way. This condition exists because the `NTUSER.DAT` file is copied from the `C:\Users\Default` profile when a new user profile is created, maintaining the same modified date even though the creation date is later. Because of this, we can be reasonably confident that specific profile will not contain any secrets. 

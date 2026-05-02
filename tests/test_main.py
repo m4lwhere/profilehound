@@ -3,7 +3,7 @@ import sys
 import types
 from types import SimpleNamespace
 from unittest import TestCase
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 class FakeSessionError(Exception):
@@ -137,6 +137,23 @@ def make_args(ignore_failed_domain_auth=False):
     )
 
 
+def profile_result():
+    return (
+        {
+            "alice": {
+                "sid": "S-1-5-21-1000",
+                "created": 0,
+                "modified": 0,
+                "target": "10.0.0.1",
+                "profile": r"\\10.0.0.1\C$\Users\alice",
+            }
+        },
+        {},
+        {},
+        {"sid": "S-1-5-21-2000"},
+    )
+
+
 class MainSmbDomainAuthFailureTests(TestCase):
     def test_domain_auth_failure_stops_remaining_targets_by_default(self):
         with (
@@ -186,3 +203,62 @@ class MainSmbDomainAuthFailureTests(TestCase):
 
         self.assertEqual(result, 1)
         self.assertEqual(enumerate_user_profiles.call_count, 2)
+
+    def test_domain_auth_abort_exports_previously_collected_profiles(self):
+        graph = Mock()
+        with (
+            patch.object(profilehound_main, "get_args", return_value=make_args()),
+            patch.object(
+                profilehound_main,
+                "load_targets",
+                return_value=[("ip", "10.0.0.1"), ("ip", "10.0.0.2")],
+            ),
+            patch.object(profilehound_main, "Progress", DummyProgress),
+            patch.object(profilehound_main, "SessionError", FakeSessionError),
+            patch.object(
+                profilehound_main, "create_opengraph", return_value=graph
+            ) as create_opengraph,
+            patch.object(
+                profilehound_main,
+                "enumerate_user_profiles",
+                side_effect=[
+                    profile_result(),
+                    FakeSessionError("domain auth failed"),
+                ],
+            ) as enumerate_user_profiles,
+        ):
+            result = profilehound_main.main()
+
+        self.assertEqual(result, 1)
+        self.assertEqual(enumerate_user_profiles.call_count, 2)
+        create_opengraph.assert_called_once()
+        graph.export_to_file.assert_called_once_with("profilehound.json")
+
+    def test_keyboard_interrupt_exports_previously_collected_profiles(self):
+        graph = Mock()
+        with (
+            patch.object(profilehound_main, "get_args", return_value=make_args()),
+            patch.object(
+                profilehound_main,
+                "load_targets",
+                return_value=[("ip", "10.0.0.1"), ("ip", "10.0.0.2")],
+            ),
+            patch.object(profilehound_main, "Progress", DummyProgress),
+            patch.object(
+                profilehound_main, "create_opengraph", return_value=graph
+            ) as create_opengraph,
+            patch.object(
+                profilehound_main,
+                "enumerate_user_profiles",
+                side_effect=[
+                    profile_result(),
+                    KeyboardInterrupt(),
+                ],
+            ) as enumerate_user_profiles,
+        ):
+            result = profilehound_main.main()
+
+        self.assertEqual(result, 130)
+        self.assertEqual(enumerate_user_profiles.call_count, 2)
+        create_opengraph.assert_called_once()
+        graph.export_to_file.assert_called_once_with("profilehound.json")

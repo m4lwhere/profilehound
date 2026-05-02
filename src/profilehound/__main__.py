@@ -243,6 +243,32 @@ def create_opengraph(found_profiles_by_target):
     return graph
 
 
+def export_results(found_profiles_by_target, args, logger, console, partial=False):
+    if len(found_profiles_by_target) == 0:
+        logger.debug("No collected profiles available to export")
+        return False
+
+    try:
+        graph = create_opengraph(found_profiles_by_target)
+        graph.export_to_file(args.output)
+    except Exception as e:
+        logger.error(f"Failed to export ProfileHound OpenGraph intel: {e}")
+        return False
+
+    if partial:
+        logger.warning(f"Exported partial ProfileHound OpenGraph intel to {args.output}")
+    else:
+        logger.info(f"Exported ProfileHound OpenGraph intel to {args.output}")
+
+    if not args.no_stats:
+        try:
+            print_statistics(found_profiles_by_target, console)
+        except Exception as e:
+            logger.error(f"Failed to print ProfileHound statistics: {e}")
+
+    return True
+
+
 def main() -> int:
     args = get_args()
     if not args.quiet:
@@ -311,102 +337,116 @@ def main() -> int:
     # Each directory in there needs to be checked for a domain user profile
     logger.debug(f"Targeting {len(targets)} hosts")
     logger.debug(f"Skipping profiles {SKIP_PROFILE_NAMES}")
-    with Progress(
-        SpinnerColumn("bouncingBall", style="magenta"),
-        TextColumn("[bold cyan]{task.description}", justify="right"),
-        BarColumn(
-            bar_width=None,
-            style="black",
-            complete_style="magenta",
-            finished_style="green",
-        ),
-        TaskProgressColumn(),
-        TimeRemainingColumn(),
-        transient=True,
-        console=console,
-    ) as progress:
-        task_id = progress.add_task(
-            "[bold magenta]Hunting Profiles...", total=len(targets)
-        )
-        for target in targets:
-            progress.update(task_id, advance=1)
-            if args.smb_local_auth:
-                logger.debug(
-                    f"Using local machine authentication for user {args.auth_user}"
-                )
-                args.auth_domain = target[1]
-            if target[0] == "fqdn":
+    try:
+        with Progress(
+            SpinnerColumn("bouncingBall", style="magenta"),
+            TextColumn("[bold cyan]{task.description}", justify="right"),
+            BarColumn(
+                bar_width=None,
+                style="black",
+                complete_style="magenta",
+                finished_style="green",
+            ),
+            TaskProgressColumn(),
+            TimeRemainingColumn(),
+            transient=True,
+            console=console,
+        ) as progress:
+            task_id = progress.add_task(
+                "[bold magenta]Hunting Profiles...", total=len(targets)
+            )
+            for target in targets:
+                progress.update(task_id, advance=1)
+                if args.smb_local_auth:
+                    logger.debug(
+                        f"Using local machine authentication for user {args.auth_user}"
+                    )
+                    args.auth_domain = target[1]
+                if target[0] == "fqdn":
+                    try:
+                        logger.debug(f"Attempting DNS resolution for {target[1]}")
+                        ip = resolver.resolve(target[1], "A")[0].address
+                        logger.debug(f"Resolved {target[1]} to {ip}")
+                    except dns.resolver.NXDOMAIN:
+                        logger.info(
+                            f"Target {target[1]} does not exist, received NXDOMAIN from DNS server {resolver.nameservers}"
+                        )
+                        continue
+                    except Exception as e:
+                        logger.error(f"Failed to resolve target {target[1]}: {e}")
+                        continue
+                elif "ip" in target[0]:
+                    ip = target[1]
                 try:
-                    logger.debug(f"Attempting DNS resolution for {target[1]}")
-                    ip = resolver.resolve(target[1], "A")[0].address
-                    logger.debug(f"Resolved {target[1]} to {ip}")
-                except dns.resolver.NXDOMAIN:
+                    owners, skipped, errors, machine = enumerate_user_profiles(
+                        target=target[1],
+                        username=args.auth_user,
+                        password=args.auth_password,
+                        domain=args.auth_domain,
+                        lmhash=args.auth_hashes,
+                        nthash=args.auth_hashes,
+                        timeout=args.smb_timeout,
+                        target_ip=ip,
+                    )
+                except OSError as e:
+                    logger.debug(f"Failed to connect to {target[1]} ({ip}): {e}")
+                    continue
+                except UserWarning as e:
+                    logger.warning(f"{e}")
+                    logger.warning(f"Continuing attempts for all remaining targets")
+                    continue
+                except SessionError as e:
                     logger.info(
-                        f"Target {target[1]} does not exist, received NXDOMAIN from DNS server {resolver.nameservers}"
+                        rf"Failed to authenticate to {target[1]} with domain auth as {args.auth_domain}\{args.auth_user}"
+                    )
+                    logger.debug(f"{e}")
+                    if args.smb_ignore_failed_domain_auth:
+                        logger.warning(
+                            "Ignoring SMB domain authentication failure because "
+                            "--smb-ignore-failed-domain-auth was set"
+                        )
+                        logger.warning("Continuing attempts for all remaining targets")
+                        continue
+                    logger.error(
+                        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                    )
+                    logger.error(
+                        "!!!!! Stopping for all targets to prevent domain account lockout !!!!!"
+                    )
+                    logger.error(
+                        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+                    )
+                    export_results(
+                        found_profiles_by_target, args, logger, console, partial=True
+                    )
+                    return 1
+                except RuntimeError as e:
+                    logger.error(
+                        f"Failed to get profile enumeration for {target[1]}: {e}"
                     )
                     continue
                 except Exception as e:
-                    logger.error(f"Failed to resolve target {target[1]}: {e}")
-                    continue
-            elif "ip" in target[0]:
-                ip = target[1]
-            try:
-                owners, skipped, errors, machine = enumerate_user_profiles(
-                    target=target[1],
-                    username=args.auth_user,
-                    password=args.auth_password,
-                    domain=args.auth_domain,
-                    lmhash=args.auth_hashes,
-                    nthash=args.auth_hashes,
-                    timeout=args.smb_timeout,
-                    target_ip=ip,
-                )
-            except OSError as e:
-                logger.debug(f"Failed to connect to {target[1]} ({ip}): {e}")
-                continue
-            except UserWarning as e:
-                logger.warning(f"{e}")
-                logger.warning(f"Continuing attempts for all remaining targets")
-                continue
-            except SessionError as e:
-                logger.info(
-                    rf"Failed to authenticate to {target[1]} with domain auth as {args.auth_domain}\{args.auth_user}"
-                )
-                logger.debug(f"{e}")
-                if args.smb_ignore_failed_domain_auth:
-                    logger.warning(
-                        "Ignoring SMB domain authentication failure because "
-                        "--smb-ignore-failed-domain-auth was set"
+                    logger.error(
+                        f"Something really went wrong with {target[1]}, attempting to continue: {e}"
                     )
-                    logger.warning("Continuing attempts for all remaining targets")
                     continue
-                logger.error(
-                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-                )
-                logger.error(
-                    "!!!!! Stopping for all targets to prevent domain account lockout !!!!!"
-                )
-                logger.error(
-                    "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-                )
-                return 1
-            except RuntimeError as e:
-                logger.error(f"Failed to get profile enumeration for {target[1]}: {e}")
-                continue
-            except Exception as e:
-                logger.error(
-                    f"Something really went wrong with {target[1]}, attempting to continue: {e}"
-                )
-                continue
 
-            if len(owners) == 0:
-                logger.info(f"No domain profiles found for {target[1]}")
-                continue
-            found_profiles_by_target[target[1]] = {
-                "owners": owners,
-                "machine_sid": machine["sid"],
-            }
-            logger.info(f"Found {len(owners)} domain profile(s) for {target[1]}")
+                if len(owners) == 0:
+                    logger.info(f"No domain profiles found for {target[1]}")
+                    continue
+                found_profiles_by_target[target[1]] = {
+                    "owners": owners,
+                    "machine_sid": machine["sid"],
+                }
+                logger.info(f"Found {len(owners)} domain profile(s) for {target[1]}")
+    except KeyboardInterrupt:
+        logger.warning("Interrupted during profile collection")
+        export_results(found_profiles_by_target, args, logger, console, partial=True)
+        return 130
+    except Exception as e:
+        logger.error(f"Profile collection failed before completion: {e}")
+        export_results(found_profiles_by_target, args, logger, console, partial=True)
+        return 1
     logger.info(f"Found {len(found_profiles_by_target)} machines with profiles")
 
     if len(found_profiles_by_target) == 0:
@@ -419,13 +459,8 @@ def main() -> int:
             )
         return 1
 
-    # Now we have a dict of targets with their profiles, time to create the OpenGraph
-    graph = create_opengraph(found_profiles_by_target)
-    graph.export_to_file(args.output)
-    logger.info(f"Exported ProfileHound OpenGraph intel to {args.output}")
-
-    if not args.no_stats:
-        print_statistics(found_profiles_by_target, console)
+    if not export_results(found_profiles_by_target, args, logger, console):
+        return 1
 
 
 def print_statistics(found_profiles_by_target, console):
