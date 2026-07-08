@@ -1,0 +1,1 @@
+{"query":"MATCH p=(u:User)-[:HasProfileArtifact]->(a:ProfileArtifact)-[fo:FoundOn]->(c:Computer)\nWHERE a.category = \"browser_store\"\nRETURN p","name":"Profilehound - Browser Profiles","description":"Shows browser profile artifact findings."}

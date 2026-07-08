@@ -1,0 +1,1 @@
+{"query":"MATCH p=(g:Group)<-[:MemberOf*1..]-(u:User)-[:HasProfileArtifact]->(a:ProfileArtifact)-[fo:FoundOn]->(c:Computer)\nWHERE g.name =~ \"(?i).*DOMAIN ADMINS.*\" AND a.category = \"remote_access\"\nRETURN p","name":"Profilehound - Remote Access Artifacts for Domain Admin Users","description":"Shows remote access artifacts for Domain Admin users."}

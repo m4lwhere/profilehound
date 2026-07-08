@@ -34,6 +34,8 @@ from impacket.ldap import ldaptypes
 from impacket.dcerpc.v5 import transport, lsad, lsat
 from impacket.dcerpc.v5.dtypes import MAXIMUM_ALLOWED
 from impacket.dcerpc.v5.rpcrt import DCERPCException
+from impacket.krb5.kerberosv5 import KerberosError
+from impacket.krb5 import constants as krb5_constants
 
 # Security descriptor request flags
 OWNER_SECURITY_INFORMATION = 0x00000001
@@ -60,6 +62,15 @@ SKIP_PROFILE_NAMES = {
 }
 
 logger = logging.getLogger("profilehound")
+
+
+class DomainAuthFailure(Exception):
+    """A domain credential was rejected (NTLM or Kerberos pre-auth).
+
+    Signals the target loop to stop scanning to avoid account lockout. impacket's
+    ``SessionError`` cannot be constructed with a plain message (it formats the
+    error code with ``%x``), so this dedicated type carries the reason instead.
+    """
 
 
 def get_machine_domain_sid(smb: SMBConnection, target: str) -> Optional[str]:
@@ -122,14 +133,28 @@ def get_machine_domain_sid(smb: SMBConnection, target: str) -> Optional[str]:
                 "Target does not appear domain-joined (no primary domain SID returned)."
             )
 
-        # Machine SAMAccountName in AD is HOSTNAME$
-        host = (smb.getRemoteName() or "").rstrip("\x00")
-        machine_sam = host if host.endswith("$") else (host + "$")
+        # Machine SAMAccountName in AD is the NetBIOS name + "$" (the short name,
+        # not the FQDN). Kerberos requires FQDN targets, so the connected name must
+        # be reduced to its first label before the LSAT lookup. Prefer the name
+        # learned during SMB negotiation, then the first label of the connected name.
+        connected = (smb.getRemoteName() or "").rstrip("\x00")
+        server_name = (smb.getServerName() or "").rstrip("\x00")
+        sam_candidates: list[str] = []
+        for value in (server_name, connected.split(".")[0], connected):
+            value = value.strip()
+            if not value:
+                continue
+            sam = value if value.endswith("$") else value + "$"
+            if sam not in sam_candidates:
+                sam_candidates.append(sam)
+        machine_sam = sam_candidates[0] if sam_candidates else "$"
 
-        # Try unqualified and DOMAIN\\HOSTNAME$ forms.
-        candidates = [machine_sam]
-        if netbios_domain:
-            candidates.append(f"{netbios_domain}\\{machine_sam}")
+        # Try unqualified and DOMAIN\\HOSTNAME$ forms for each candidate name.
+        candidates = []
+        for sam in sam_candidates:
+            candidates.append(sam)
+            if netbios_domain:
+                candidates.append(f"{netbios_domain}\\{sam}")
 
         lookup_fn = (
             getattr(lsat, "hLsarLookupNames3", None)
@@ -149,7 +174,7 @@ def get_machine_domain_sid(smb: SMBConnection, target: str) -> Optional[str]:
 
                 # Ensure it's the AD object SID (must be under the domain SID)
                 if sid.startswith(domain_sid + "-"):
-                    return sid, machine_sam, netbios_domain
+                    return sid, name.split("\\")[-1], netbios_domain
             except DCERPCException as e:
                 if "STATUS_NONE_MAPPED" in str(e):
                     last_err = e
@@ -250,9 +275,13 @@ def filetime_to_datetime(filetime: int) -> Optional[datetime]:
 
 def get_owner_sid_for_path(
     smb: SMBConnection, share: str, path: str, is_directory: bool = False
-) -> Optional[str]:
+) -> Tuple[Optional[str], Optional[datetime], Optional[datetime]]:
     """
-    Get the owner SID for a file or directory via SMB2/3 security descriptor query.
+    Get the owner SID and (created, modified) timestamps for a file or directory
+    via SMB2/3 security descriptor query.
+
+    Always returns a 3-tuple so callers can unpack unconditionally; on any error
+    the tuple is (None, None, None).
     """
     tid = None
     fid = None
@@ -316,9 +345,9 @@ def get_owner_sid_for_path(
         return owner_sid, created, modified
 
     except SessionError:
-        return None
+        return None, None, None
     except Exception:
-        return None
+        return None, None, None
 
     finally:
         if fid is not None and tid is not None:
@@ -363,59 +392,101 @@ def parse_owner_sid(sd_bytes: bytes) -> Optional[str]:
         return None
 
 
-def enumerate_user_profiles(
-    target: str,
-    username: str,
-    password: str,
-    domain: str = "",
-    lmhash: str = "",
-    nthash: str = "",
-    target_ip: Optional[str] = None,
-    timeout: int = 3,
-    include_local: bool = False,
-) -> Tuple[Dict[str, str], Dict[str, str], Dict[str, str], Dict[str, str]]:
-    """
-    Enumerate user profiles on a remote Windows host via C$ share.
-    Requires administrative access to the C$ share.
-
-    Returns:
-        machines: {machine_name: machine_sid}
-        owners:  {profile_name: owner_sid} for domain accounts
-        skipped: {profile_name: reason} for skipped profiles
-        errors:  {profile_name: error_message} for failed queries
-    """
-    owners: Dict[str, str] = {}
-    skipped: Dict[str, str] = {}
-    errors: Dict[str, str] = {}
-    machine: Dict[str, str] = {}
-
-    # Resolve IP
-    remote_host = target_ip or target
-
-    # Connect to SMB
-    logger.debug(f"Connecting to {target} ({remote_host})...")
-    smb = SMBConnection(
-        remoteName=target, remoteHost=remote_host, timeout=timeout, sess_port=445
+def _kerberos_error_is_lockout(code: int) -> bool:
+    """Kerberos error codes that mean a real secret was rejected (lockout risk)."""
+    return code in (
+        krb5_constants.ErrorCodes.KDC_ERR_PREAUTH_FAILED.value,
+        krb5_constants.ErrorCodes.KDC_ERR_CLIENT_REVOKED.value,
     )
 
-    # Authenticate
+
+def authenticate_smb(
+    smb: SMBConnection,
+    *,
+    username: str,
+    password: str,
+    domain: str,
+    lmhash: str = "",
+    nthash: str = "",
+    target: str,
+    remote_host: str,
+    use_kerberos: bool = False,
+    aes_key: str = "",
+    kdc_host: Optional[str] = None,
+    use_cache: bool = False,
+    kerberos_tgt: Optional[dict] = None,
+) -> None:
+    """Authenticate an SMBConnection via NTLM, pass-the-hash, or Kerberos.
+
+    ``kerberos_tgt`` (``{"KDC_REP", "cipher", "sessionKey"}``) lets the caller
+    supply a TGT obtained once and reuse it across every host, so only a
+    per-host service ticket (TGS) is requested instead of a fresh TGT each time.
+
+    On failure this raises into the taxonomy the target loop already handles:
+    ``UserWarning`` to skip this target and continue, or ``SessionError`` to
+    trigger the caller's lockout-prevention stop. Kerberos failures are mapped
+    into that same taxonomy (pre-auth/revoked with a real secret -> stop;
+    clock skew / unknown principal / ticket problems -> skip with guidance).
+    """
+    secret_used = bool(password or nthash or lmhash or aes_key)
     try:
-        if nthash or lmhash:
+        if use_kerberos:
+            logger.info(
+                rf"Authenticating to {target} ({remote_host}) with Kerberos as {domain}\{username}"
+            )
+            logger.debug(
+                "Kerberos login: kdcHost=%s useCache=%s aesKey=%s nthash=%s reuseTGT=%s"
+                % (
+                    kdc_host,
+                    use_cache,
+                    "set" if aes_key else "none",
+                    "set" if nthash else "none",
+                    kerberos_tgt is not None,
+                )
+            )
+            smb.kerberosLogin(
+                username,
+                password or "",
+                domain,
+                lmhash=lmhash,
+                nthash=nthash,
+                aesKey=aes_key,
+                kdcHost=kdc_host,
+                TGT=kerberos_tgt,
+                useCache=use_cache,
+            )
+        elif nthash or lmhash:
             logger.info("Authenticating with hashes...")
             logger.debug(f"Authenticating with hashes {lmhash}:{nthash}")
             smb.login(username, "", domain, lmhash=lmhash, nthash=nthash)
         else:
-            # logger.info(
-            #     rf"Attempting login on {target} ({remote_host}) with user {domain}\{username}"
-            #     if domain
-            #     else rf"Attempting local auth login on {target} ({remote_host}) with user {username}"
-            # )
             logger.debug(
                 rf"Attempting login on {target} ({remote_host}) with credentials {domain}\{username}:{password}"
                 if domain
                 else rf"Attempting local auth login on {target} ({remote_host}) with credentials {username}:{password}"
             )
             smb.login(username, password, domain)
+    except KerberosError as e:
+        code = e.getErrorCode()
+        logger.debug(f"Kerberos error {code} on {target}: {e}")
+        if code == krb5_constants.ErrorCodes.KRB_AP_ERR_SKEW.value:
+            raise UserWarning(
+                f"Kerberos clock skew too great for {target}. Sync the host clock with "
+                f"the DC (e.g. 'ntpdate {kdc_host or 'DC'}' or run under faketime) and retry."
+            )
+        if code in (
+            krb5_constants.ErrorCodes.KDC_ERR_S_PRINCIPAL_UNKNOWN.value,
+            krb5_constants.ErrorCodes.KDC_ERR_C_PRINCIPAL_UNKNOWN.value,
+        ):
+            raise UserWarning(
+                f"Kerberos principal unknown for {target}. Use an FQDN target that matches "
+                f"the machine's SPN and ensure the KDC ({kdc_host or 'DC'}) is reachable."
+            )
+        if secret_used and _kerberos_error_is_lockout(code):
+            raise DomainAuthFailure(
+                f"Kerberos pre-authentication failed for {domain}\\{username} on {target}: {e}"
+            ) from e
+        raise UserWarning(f"Kerberos authentication failed for {target}: {e}")
     except SessionError as e:
         if domain == target:
             logger.error(
@@ -430,9 +501,70 @@ def enumerate_user_profiles(
                 rf"Failed to authenticate to \\{target} with domain auth as {domain}\{username}"
             )
             logger.debug(f"{e}")
-            raise SessionError(
+            raise DomainAuthFailure(
                 f"Check permissions and credentials. Failed to authenticate to {target} with domain auth: {e}"
-            )
+            ) from e
+
+
+def enumerate_user_profiles(
+    target: str,
+    username: str,
+    password: str,
+    domain: str = "",
+    lmhash: str = "",
+    nthash: str = "",
+    target_ip: Optional[str] = None,
+    timeout: int = 3,
+    include_local: bool = False,
+    artifact_options=None,
+    use_kerberos: bool = False,
+    aes_key: str = "",
+    kdc_host: Optional[str] = None,
+    use_cache: bool = False,
+    kerberos_tgt: Optional[dict] = None,
+) -> Tuple[Dict[str, str], Dict[str, list], Dict[str, str], Dict[str, str], Dict[str, str]]:
+    """
+    Enumerate user profiles on a remote Windows host via C$ share.
+    Requires administrative access to the C$ share.
+
+    Returns:
+        machines: {machine_name: machine_sid}
+        owners:  {profile_name: owner_sid} for domain accounts
+        artifacts: {profile_name: [ArtifactFinding, ...]} for positive artifact findings
+        skipped: {profile_name: reason} for skipped profiles
+        errors:  {profile_name: error_message} for failed queries
+    """
+    owners: Dict[str, str] = {}
+    artifacts: Dict[str, list] = {}
+    skipped: Dict[str, str] = {}
+    errors: Dict[str, str] = {}
+    machine: Dict[str, str] = {}
+
+    # Resolve IP
+    remote_host = target_ip or target
+
+    # Connect to SMB
+    logger.debug(f"Connecting to {target} ({remote_host})...")
+    smb = SMBConnection(
+        remoteName=target, remoteHost=remote_host, timeout=timeout, sess_port=445
+    )
+
+    # Authenticate (NTLM, pass-the-hash, or Kerberos)
+    authenticate_smb(
+        smb,
+        username=username,
+        password=password,
+        domain=domain,
+        lmhash=lmhash,
+        nthash=nthash,
+        target=target,
+        remote_host=remote_host,
+        use_kerberos=use_kerberos,
+        aes_key=aes_key,
+        kdc_host=kdc_host,
+        use_cache=use_cache,
+        kerberos_tgt=kerberos_tgt,
+    )
 
     logger.info(
         rf"Successful authentication on {target} ({remote_host}) as {domain}\{username}"
@@ -459,7 +591,7 @@ def enumerate_user_profiles(
             logger.warning(
                 "Could not determine machine SID - local account filtering may be incomplete"
             )
-        if machine_domain_sid.startswith(machine_local_sid):
+        if machine_local_sid and machine_domain_sid.startswith(machine_local_sid):
             logger.debug(
                 f"Machine domain SID and local SID are the same - target {target} might be a domain controller"
             )
@@ -607,11 +739,13 @@ def enumerate_user_profiles(
                     skipped[name] = f"local account ({owner_sid})"
                     continue
 
+            created_epoch = created.timestamp() if created else None
+            modified_epoch = modified.timestamp() if modified else None
             owners[name] = {
                 **owners.get(name, {}),
                 "sid": owner_sid,
-                "created": created.timestamp(),
-                "modified": modified.timestamp(),
+                "created": created_epoch,
+                "modified": modified_epoch,
                 "target": target,
                 "profile": rf"\\{target}\{share}\Users\{name}",
             }
@@ -620,9 +754,37 @@ def enumerate_user_profiles(
                 "netbios_domain": netbios_domain,
                 "sam": machine_sam,
             }
-            logger.info(
-                f"    {name}:\t{owner_sid}\tcreated:{created.strftime('%Y-%m-%d')}\tmodified:{modified.strftime('%Y-%m-%d')}"
+            created_display = created.strftime("%Y-%m-%d") if created else "unknown"
+            modified_display = (
+                modified.strftime("%Y-%m-%d") if modified else "unknown"
             )
+            logger.info(
+                f"    {name}:\t{owner_sid}\tcreated:{created_display}\tmodified:{modified_display}"
+            )
+            if artifact_options and getattr(artifact_options, "enabled", False):
+                try:
+                    from profilehound.modules.artifacts.collector import (
+                        collect_profile_artifacts,
+                    )
+
+                    artifacts[name] = collect_profile_artifacts(
+                        smb=smb,
+                        share=share,
+                        target=target,
+                        profile_name=name,
+                        profile_details=owners[name],
+                        machine=machine,
+                        artifact_options=artifact_options,
+                    )
+                    if artifacts[name]:
+                        logger.info(
+                            f"    {name}:\tfound {len(artifacts[name])} profile artifact type(s)"
+                        )
+                except Exception as e:
+                    errors[f"{name}:artifacts"] = str(e)
+                    logger.warning(
+                        f"Artifact collection failed for {name} on {target}, continuing: {e}"
+                    )
 
         except SessionError as e:
             errors[name] = str(e)
@@ -637,4 +799,4 @@ def enumerate_user_profiles(
         logger.debug(f"Failed to logoff from SMB session on {target}: {e}")
         pass
 
-    return owners, skipped, errors, machine
+    return owners, artifacts, skipped, errors, machine

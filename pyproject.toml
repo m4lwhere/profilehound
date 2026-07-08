@@ -24,3 +24,11 @@ build-backend = "uv_build"
 
 [project.urls]
 homepage = "https://github.com/m4lwhere/profilehound"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+
+[dependency-groups]
+dev = [
+    "jsonschema>=4.26.0",
+]

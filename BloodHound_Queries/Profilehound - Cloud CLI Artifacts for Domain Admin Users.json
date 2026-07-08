@@ -1,0 +1,1 @@
+{"query":"MATCH p=(g:Group)<-[:MemberOf*1..]-(u:User)-[:HasProfileArtifact]->(a:ProfileArtifact)-[fo:FoundOn]->(c:Computer)\nWHERE g.name =~ \"(?i).*DOMAIN ADMINS.*\" AND a.category = \"cloud_cli\"\nRETURN p","name":"Profilehound - Cloud CLI Artifacts for Domain Admin Users","description":"Shows cloud CLI artifacts for Domain Admin users."}

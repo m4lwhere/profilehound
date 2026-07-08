@@ -1,0 +1,1 @@
+{"query":"MATCH p=(u:User)-[:HasProfileArtifact]->(a:ProfileArtifact)-[fo:FoundOn]->(c:Computer)\nWHERE a.artifacttype = \"notepadpp_backup\"\nRETURN p","name":"Profilehound - Profile Artifacts by Type","description":"Shows ProfileHound artifact findings for a specific artifact type. Edit the artifacttype value as needed."}

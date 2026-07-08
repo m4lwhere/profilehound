@@ -1,0 +1,1 @@
+{"query":"MATCH p=(u:User)-[:HasProfileArtifact]->(a:ProfileArtifact)-[fo:FoundOn]->(c:Computer)\nWHERE a.category = \"cloud_cli\"\nRETURN p","name":"Profilehound - Cloud CLI Artifacts","description":"Shows cloud CLI profile artifact findings."}

@@ -1,0 +1,1 @@
+{"query":"MATCH p=(u:User)-[:HasProfileArtifact]->(a:ProfileArtifact)-[fo:FoundOn]->(c:Computer)\nWHERE a.category = \"dpapi_material\"\nRETURN p","name":"Profilehound - DPAPI Material","description":"Shows DPAPI-related profile artifact findings."}

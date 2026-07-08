@@ -1,0 +1,1 @@
+{"query":"MATCH p=(u:User)-[:HasProfileArtifact]->(a:ProfileArtifact)-[fo:FoundOn]->(c:Computer)\nWHERE a.category = \"remote_access\"\nRETURN p","name":"Profilehound - SSH and Remote Access Artifacts","description":"Shows SSH and remote access profile artifact findings."}

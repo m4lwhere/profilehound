@@ -1,0 +1,1 @@
+{"query":"MATCH p=(:ProfileArtifact)-[fo:FoundOn]->(c:Computer)\nRETURN p","name":"Profilehound - Computers with Profile Artifacts","description":"Shows computers with ProfileHound artifact findings."}

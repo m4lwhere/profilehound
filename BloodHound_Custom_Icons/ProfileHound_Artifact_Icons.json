@@ -1,0 +1,95 @@
+{
+  "custom_types": {
+    "ProfileArtifact": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "folder-open",
+        "color": "#94A3B8"
+      }
+    },
+    "ProfileArtifactCommandHistory": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "terminal",
+        "color": "#38BDF8"
+      }
+    },
+    "ProfileArtifactEditorRecovery": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "clock-rotate-left",
+        "color": "#F59E0B"
+      }
+    },
+    "ProfileArtifactRemoteAccess": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "network-wired",
+        "color": "#EF4444"
+      }
+    },
+    "ProfileArtifactCloudCli": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "cloud",
+        "color": "#0EA5E9"
+      }
+    },
+    "ProfileArtifactDeveloperSecret": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "code",
+        "color": "#A855F7"
+      }
+    },
+    "ProfileArtifactInfrastructureAsCode": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "diagram-project",
+        "color": "#22C55E"
+      }
+    },
+    "ProfileArtifactPasswordVault": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "lock",
+        "color": "#EAB308"
+      }
+    },
+    "ProfileArtifactVpnConfig": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "shield-halved",
+        "color": "#14B8A6"
+      }
+    },
+    "ProfileArtifactBrowserStore": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "globe",
+        "color": "#F97316"
+      }
+    },
+    "ProfileArtifactDpapiMaterial": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "fingerprint",
+        "color": "#6366F1"
+      }
+    },
+    "ProfileArtifactIdentityMaterialContainer": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "box-archive",
+        "color": "#64748B"
+      }
+    },
+    "ProfileArtifactAiAgent": {
+      "icon": {
+        "type": "font-awesome",
+        "name": "robot",
+        "color": "#D946EF"
+      }
+    }
+  }
+}

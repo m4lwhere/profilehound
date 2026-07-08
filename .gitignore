@@ -1,3 +1,9 @@
+# ProfileHound local outputs
+demo/
+demo_artifacts/
+/profilehound_*.json
+/profilehound_*_artifacts/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
